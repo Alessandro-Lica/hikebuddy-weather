@@ -1,0 +1,2 @@
+date,runs,requests,calls,max_calls_1min,max_calls_1h,refused
+2026-11-13,1,10,925.0,500.0,925.0,0
