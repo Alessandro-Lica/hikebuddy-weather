@@ -119,10 +119,12 @@ def scale_of(values):
     raise ValueError("more than 4 decimals")
 
 
-def encode(fetched, cells_hourly):
-    """cells_hourly: {level: {cell id: hourly dict from Open-Meteo}} ->
+def encode(fetched, cells_hourly, elev, start=None):
+    """cells_hourly: {level: {cell id: hourly dict from Open-Meteo}}, elev: {level: {cell id: m}} ->
     {"v": 1, "fetched", "start", "days", "hours": [from, to),
-     level: {"time": [...], "cells": [ids], "vars": {name: {"rows": "all" | "win", "scale", "data"}}}}.
+     level: {"time": [...], "cells": [ids], "elev": [m], "vars": {name: {"rows": "all" | "win", "scale", "data"}}}}.
+    elev = the point's elevation asked for (the app shifts temperatures from it to the hike's top).
+    start: first forecast day (default: from the time axis; saved fixtures may be trimmed).
     data = cell-major integers (value * scale, null kept); "win" rows = days start .. start+6, hours
     HOURS; "all" = every row of "time". Every cell of a level has the same "time"."""
     out = {"v": 1, "fetched": fetched, "days": FORECAST_DAYS, "hours": list(HOURS)}
@@ -132,9 +134,8 @@ def encode(fetched, cells_hourly):
         for c in ids:
             if by_cell[c]["time"] != time_:
                 raise RuntimeError(f"{level} {c}: different time axis")
-        start = time_[PAST[level] * 24][:10]
-        if level == "coarse":
-            out["start"] = start
+        start = start or time_[PAST[level] * 24][:10]
+        out.setdefault("start", start)
         win = [i for i, t in enumerate(time_) if t[:10] >= start and HOURS[0] <= int(t[11:13]) < HOURS[1]]
         vs = {}
         for v in VARS[level]:
@@ -143,7 +144,7 @@ def encode(fetched, cells_hourly):
             vals = [by_cell[c][v][i] for c in ids for i in idx]
             s = scale_of(vals)
             vs[v] = {"rows": rows, "scale": s, "data": [None if x is None else round(x * s) for x in vals]}
-        out[level] = {"time": time_, "cells": ids, "vars": vs}
+        out[level] = {"time": time_, "cells": ids, "elev": [elev[level][c] for c in ids], "vars": vs}
     return out
 
 
@@ -227,7 +228,8 @@ def main_fetch(run, limit):
                     got[level][c[0]] = j["hourly"]
                 print(f"{level}: {len(got[level])}/{len(pts)}", flush=True)
         fetched = datetime.now(ROME).isoformat(timespec="seconds")
-        latest = write_site(encode(fetched, got), ROOT / "site", round(sum(x[3] for x in f.log), 1))
+        elev = {lv: {c[0]: float(c[3]) for c in cells[lv]} for lv in cells}
+        latest = write_site(encode(fetched, got, elev), ROOT / "site", round(sum(x[3] for x in f.log), 1))
         print(f"bundle {latest['file']}: {latest['bytes'] / 1e6:.2f} MB, {latest['calls']} calls")
     except LimitError as e:
         status, note = "limit", str(e)[:200]
@@ -247,16 +249,17 @@ def main_fetch(run, limit):
         sys.exit(1)
 
 
-def main_fixture(src, out):
+def main_fixture(src, out, start=None):
     """Golden forecast.json ({level: {cell: {lat, lon, elev, hourly}}}) -> bundle, as if fetched."""
     js = json.loads(Path(src).read_text())
     got = {lv: {c: v["hourly"] for c, v in js[lv].items()} for lv in ("coarse", "fine") if js.get(lv)}
+    elev = {lv: {c: v["elev"] for c, v in js[lv].items()} for lv in got}
     for lv in got:  # the fixture may hold more variables (apparent_temperature)
         for h in got[lv].values():
             for v in VARS[lv]:
                 h.setdefault(v, [None] * len(h["time"]))
-    first = next(iter(got["coarse"].values()))["time"][0][:10]
-    Path(out).write_text(json.dumps(encode(f"{first}T06:00:00+01:00", got), separators=(",", ":")))
+    first = start or next(iter(got["coarse"].values()))["time"][0][:10]
+    Path(out).write_text(json.dumps(encode(f"{first}T06:00:00+01:00", got, elev, first), separators=(",", ":")))
     print(f"{out} written")
 
 
@@ -264,7 +267,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default="local")
     ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--from-fixture", nargs=2, metavar=("FORECAST_JSON", "OUT"))
+    ap.add_argument("--from-fixture", nargs="+", metavar="FORECAST_JSON OUT [START_DAY]")
     a = ap.parse_args()
     if a.from_fixture:
         main_fixture(*a.from_fixture)
