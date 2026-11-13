@@ -183,6 +183,12 @@ def append_csv(path: Path, head, rows):
         w.writerows(rows)
 
 
+def num(x):
+    """Call count for the CSVs: 925 rather than 925.0, 0.4 stays."""
+    x = round(x, 1)
+    return int(x) if x == int(x) else x
+
+
 def rolling_max(times_calls, seconds):
     best, j, s = 0.0, 0, 0.0
     for i, (t, c) in enumerate(times_calls):
@@ -206,8 +212,8 @@ def write_daily(stats: Path):
         for d in sorted(by_day):
             rows = sorted(by_day[d], key=lambda x: x[0])
             tc = [(t, c) for t, c, _ in rows]
-            w.writerow([d, len({r["run"] for _, _, r in rows}), len(rows), round(sum(c for _, c in tc), 1),
-                        round(rolling_max(tc, 60), 1), round(rolling_max(tc, 3600), 1),
+            w.writerow([d, len({r["run"] for _, _, r in rows}), len(rows), num(sum(c for _, c in tc)),
+                        num(rolling_max(tc, 60)), num(rolling_max(tc, 3600)),
                         sum(r["status"] == "429" for _, _, r in rows)])
 
 
@@ -229,7 +235,7 @@ def main_fetch(run, limit):
                 print(f"{level}: {len(got[level])}/{len(pts)}", flush=True)
         fetched = datetime.now(ROME).isoformat(timespec="seconds")
         elev = {lv: {c[0]: float(c[3]) for c in cells[lv]} for lv in cells}
-        latest = write_site(encode(fetched, got, elev), ROOT / "site", round(sum(x[3] for x in f.log), 1))
+        latest = write_site(encode(fetched, got, elev), ROOT / "site", num(sum(x[3] for x in f.log)))
         print(f"bundle {latest['file']}: {latest['bytes'] / 1e6:.2f} MB, {latest['calls']} calls")
     except LimitError as e:
         status, note = "limit", str(e)[:200]
@@ -237,10 +243,10 @@ def main_fetch(run, limit):
         status, note = "error", f"{type(e).__name__}: {e}"[:200]
     stats = ROOT / "stats"
     append_csv(stats / "requests.csv", REQ_HEAD,
-               [[t.isoformat(timespec="seconds"), run, lv, n, c, s] for t, lv, n, c, s in f.log])
+               [[t.isoformat(timespec="seconds"), run, lv, n, num(c), s] for t, lv, n, c, s in f.log])
     append_csv(stats / "runs.csv", RUN_HEAD,
                [[run, t0.isoformat(timespec="seconds"), datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                 status, len(f.log), round(sum(x[3] for x in f.log), 1), sum(x[4] == 429 for x in f.log),
+                 status, len(f.log), num(sum(x[3] for x in f.log)), sum(x[4] == 429 for x in f.log),
                  latest["bytes"] if latest else "", note]])
     if (stats / "requests.csv").exists():
         write_daily(stats)

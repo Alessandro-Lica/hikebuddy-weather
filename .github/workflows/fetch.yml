@@ -20,11 +20,8 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Fetch the forecast
         run: python3 fetch.py --run "${{ github.run_id }}-${{ github.run_attempt }}"
@@ -40,8 +37,19 @@ jobs:
           for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 5; done
 
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: site
+
+  # Separate job (GitHub's Pages pattern): runs only when the fetch succeeded, so a failed run
+  # leaves the previous bundle online.
+  deploy:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v4
