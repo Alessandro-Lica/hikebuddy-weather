@@ -2,9 +2,9 @@ name: fetch weather
 
 on:
   schedule:
-    # 05, 09, 13, 17, 21 Italian winter time (CET = UTC+1); one hour later in summer (CEST).
-    # GitHub may start scheduled runs 5-30 min late.
-    - cron: "0 4,8,12,16,20 * * *"
+    # 4 runs: 04:17, 09:17, 14:17, 19:17 Italian winter time (CET = UTC+1); one hour later in summer.
+    # Off the hour on purpose: GitHub delayed or skipped most runs scheduled at :00 (2026-11).
+    - cron: "17 3,8,13,18 * * *"
   workflow_dispatch:
 
 permissions:
